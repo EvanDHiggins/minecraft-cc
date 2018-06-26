@@ -33,143 +33,185 @@ function Point:toString()
     return "("..self.x..", "..self.y..")"
 end
 
-DrawableRect = {
+Rectangle = {
     p1 = Point:new{x = 0, y = 0},
     p2 = Point:new{x = 1, y = 1},
     color = colors.white,
-    onClick = function() debug("asdfasdf") end
+    onClick = function() end
 }
 
-function DrawableRect:new(rect)
+function Rectangle:new( rect )
     rect = rect or {}
     setmetatable(rect, self)
     self.__index = self
     return rect
 end
 
-function drawRectangle(p1, p2, color)
-    for row = math.min(p1.y, p2.y), math.max(p1.y, p2.y) do
-        paintutils.drawLine(p1.x, row, p2.x, row, color)
+function Rectangle:toString()
+    return "Rectangle{"..(self.p1:toString())..", "..(self.p2:toString()).."}"
+end
+
+function Rectangle:bottom()
+    return math.max(self.p1.y, self.p2.y)
+end
+
+function Rectangle:top()
+    return math.min(self.p1.y, self.p2.y)
+end
+
+function Rectangle:left()
+    return math.min(self.p1.x, self.p2.x)
+end
+
+function Rectangle:right()
+    return math.max(self.p1.x, self.p2.x)
+end
+
+function Rectangle:translateX( dx )
+    self.p1.x = self.p1.x + dx
+    self.p2.x = self.p2.x + dx
+end
+
+function Rectangle:translateY( dy )
+    self.p1.y = self.p1.y + dy
+    self.p2.y = self.p2.y + dy
+end
+
+function Rectangle:height()
+    return math.abs(self.p1.y - self.p2.y)
+end
+
+function Rectangle:width()
+    return math.abs(self.p1.x - self.p2.x)
+end
+
+-- 0 < porportion < 1
+-- Returns two rectangles created by splitting self
+-- proportionally.
+-- The first rectangle returned will be the requested
+-- proportion from the left, the second will be the remaining portion.
+function Rectangle:splitByProportionX( p )
+    local newX = self:left() + math.floor(p * self:width())
+    return Rectangle:new{
+        p1 = Point:new{x = self:left(), y = self:top()},
+        p2 = Point:new{x = newX, y = self:bottom()}
+    }, Rectangle:new{
+        p1 = Point:new{x = newX, y = self:top()},
+        p2 = Point:new{x = self:right(), y = self:bottom()}
+    }
+end
+
+-- 0 < p < 1
+-- p is the proprotion of the first rectangle returned.
+-- Returns two rectangles created by splitting self
+-- proportionally.
+-- The first rectangle returned will be the requested
+-- proportion from the bottom, the second will be the remaining portion.
+function Rectangle:splitByProportionY( p )
+    debug("p = "..p)
+    local newY = self:bottom() - math.floor(p * self:height())
+    return Rectangle:new{
+        p1 = Point:new{x = self:left(), y = newY},
+        p2 = Point:new{x = self:right(), y = self:bottom()}
+    }, Rectangle:new{
+        p1 = Point:new{x = self:left(), y = self:top()},
+        p2 = Point:new{x = self:right(), y = newY}
+    }
+end
+
+function Rectangle:new(rect)
+    rect = rect or {}
+    setmetatable(rect, self)
+    self.__index = self
+    return rect
+end
+
+function Rectangle:draw( c )
+    for row = self:top(), self:bottom() do
+        local color
+        if c then
+            color = c.color
+        else
+            color = self.color
+        end
+        paintutils.drawLine(self.p1.x, row, self.p2.x, row, color)
     end
 end
 
-function DrawableRect:draw()
-    drawRectangle(self.p1, self.p2, self.color)
-end
-
-function DrawableRect:contains( pos )
+function Rectangle:contains( pos )
     local xBound = pos.x >= math.min(self.p1.x, self.p2.x) and pos.x <= math.max(self.p1.x, self.p2.x)
     local yBound = pos.y >= math.min(self.p1.y, self.p2.y) and pos.y <= math.max(self.p1.y, self.p2.y)
     return xBound and yBound
 end
 
-function DrawableRect:click()
+function Rectangle:click()
     self.onClick()
 end
 
+MultiValueFilledBar = Rectangle:new{
+    capacity = 100,
 
--- Bar which is filled based on the proportion of its value
--- to its value range. Good for temperature guages, progress bars,
--- loading screens, etc.
-ProgressBar = DrawableRect:new{
-    foregroundColor = colors.white,
-    backgroundColor = colors.lightGray,
-    minValue = 0,
-    maxValue = 100,
+    -- integer Quantities represented by the bar
+    -- Must sum to <= capacity
+    quantities = {},
 
-    -- current value stored in progress bar.
-    value = 50,
+    -- colors[i] represents the portion of the bar filled
+    -- for quantities[i]. Unfilled space uses self.color
+    colors = {},
+
+    -- function returning #quantities values
+    getQuantities = nil,
 
     -- orientation of 1 means the bar fills from bottom to top.
     -- 2 is a 90 degree turn, 3 is another 90, and 4 is a further 90
     orientation = 1
 }
 
-function ProgressBar:new(bar)
-    bar = bar or {
-        foregroundColor = colors.white,
-        backgroundColor = colors.lightGray}
-    setmetatable(bar, self)
-    self.__index = self
-    return bar
-end
-
-function ProgressBar:draw()
-    local p1, p2, q1, q2 = self:getRectangles()
-    drawRectangle(p1, p2, self.foregroundColor)
-    drawRectangle(q1, q2, self.backgroundColor)
-end
-
-function round( n )
-    return math.floor(n + 0.5)
-end
-
-function ProgressBar:getRectangles()
-    local minX = math.min(self.p1.x, self.p2.x)
-    local maxX = math.max(self.p1.x, self.p2.x)
-    local minY = math.min(self.p1.y, self.p2.y)
-    local maxY = math.max(self.p1.y, self.p2.y)
-
-    local calcPixels = function(scale)
-        return round(scale * ((self.value - self.minValue) / (self.maxValue - self.minValue)))
-    end
-
-    if self:xOriented() then
-        local width = math.abs(self.p1.x - self.p2.x)
-        local pixels = calcPixels(width)
-        if self.orientation == 2 then
-            local newX = minX + pixels
-            return Point:new{x = minX, y = minY},
-                   Point:new{x = newX, y = maxY},
-                   Point:new{x = newX, y = minY},
-                   Point:new{x = maxX, y = maxY}
-        else
-            local newX = maxX - pixels
-            return Point:new{x = newX, y = minY},
-                   Point:new{x = maxX, y = maxY},
-                   Point:new{x = minX, y = minY},
-                   Point:new{x = newX, y = maxY}
+function MultiValueFilledBar:updateQuantities()
+    if type(self.getQuantities) == "function" then
+        local newQuantities = { self.getQuantities() }
+        for i=1, #newQuantities do
+            self.quantities[i] = newQuantities[i]
         end
-    else
-        local height = math.abs(self.p1.y - self.p2.y)
-        local pixels = calcPixels(height)
-        if self.orientation == 1 then
-            local newY = maxY - pixels
-            return Point:new{x = minX, y = newY},
-                   Point:new{x = maxX, y = maxY},
-                   Point:new{x = minX, y = minY},
-                   Point:new{x = maxX, y = newY}
-        else
-            local newY = minY + pixels
-            return Point:new{x = minX, y = minY},
-                   Point:new{x = maxX, y = newY},
-                   Point:new{x = minX, y = newY},
-                   Point:new{x = maxX, y = maxY}
-
-        end
-
     end
-
 end
 
-function ProgressBar:revesed()
+function MultiValueFilledBar:setQuantities( newQuantities )
+    quantities = newQuantities
 end
 
-function ProgressBar:xOriented()
-    return self.orientation == 2 or self.orientation == 4
+function MultiValueFilledBar:setSingleQuantity( index, quantity )
+    if index <= #self.quantities and index > 0 then
+        self.quantities[index] = quantity
+    end
 end
 
-function ProgressBar:increment()
-    self.value = math.min(self.value + 1, self.maxValue)
+function MultiValueFilledBar:draw()
+    self:updateQuantities()
+    local tempCapacity = self.capacity
+    local prev = self
+    local split = function( prev, orientation, proportion )
+        if orientation == 1 then
+            return prev:splitByProportionY(proportion)
+        elseif orientation == 2 then
+            return prev:splitByProportionX(proportion)
+        elseif orientation == 3 then
+            local r1, r2 = prev:splitByProportionY(1 - proportion)
+            return r2, r1
+        elseif orientation == 4 then
+            local r1, r2 = prev:splitByProportionX(1 - proportion)
+            return r2, r1
+        end
+    end
+    for i=1, #self.quantities - 1 do
+        local r1, r2 = split(prev, self.orientation, self.quantities[i] / tempCapacity)
+        prev = r2
+        tempCapacity = tempCapacity - self.quantities[i]
+        r1:draw{color = self.colors[i]}
+    end
+    prev:draw{ color = self.colors[#self.colors]}
 end
 
-function ProgressBar:decrement()
-    self.value = math.max(self.value - 1, self.minValue)
-end
-
-function ProgressBar:setValue( newValue )
-    self.value = math.min(maxValue, math.max(minValue, newValue))
-end
 
 local exiting = false
 
@@ -214,39 +256,45 @@ function drawScreen()
     end
 end
 
-local reactor = peripheral.wrap("BigReactors-Reactor_0")
-
-function setReactorControlRods()
-    if reactor == nil then
-        return
-    end
-
-    reactor.setAllControlRodLevels(0)
-end
+local reactor = peripheral.wrap("BigReactors-Reactor_1")
 
 function quit()
     exiting = true
 end
 
-local rect = DrawableRect:new{p1 = Point:new{x = 3, y = 2}, p2 = Point:new{x = 13, y = 4}, onClick = quit}
-table.insert(drawables, rect)
-local rect = DrawableRect:new{p1 = Point:new{x = 20, y = 20}, p2 = Point:new{x = 24, y = 21}, color = colors.red, onClick = quit }
-table.insert(drawables, rect)
-local rect = DrawableRect:new{p1 = Point:new{x = 2, y = 20}, p2 = Point:new{x = 4, y = 10}, color = colors.green, onClick = quit }
-table.insert(drawables, rect)
-local rect = DrawableRect:new{p1 = Point:new{x = 8, y = 23}, p2 = Point:new{x = 6, y = 20}, color = colors.green, onClick = quit }
-table.insert(drawables, rect)
+function addDrawable( d )
+    table.insert(drawables, d)
+end
 
-local bar
-bar = ProgressBar:new{
-    p1 = Point:new{x = 40, y = 42},
-    p2 = Point:new{x = 50, y = 10},
-    value = 20,
-    orientation = 1,
-    onClick = function()
-        bar:increment()
+addDrawable(MultiValueFilledBar:new{
+    p1 = Point:new{x = 15, y = 8},
+    p2 = Point:new{x = 25, y = 38},
+    capacity = 2000,
+    labels = {"<1350", ">=1350", "none"},
+    quantities = {0, 0},
+    quantities = {0, 0, 0},
+    colors = {colors.blue, colors.red, colors.gray},
+    orientation = 3,
+
+    getQuantities = function()
+        local temp = reactor.getFuelTemperature()
+        return math.floor(math.min(temp, 1350)), math.floor(math.max(temp - 1350, 0)), math.floor(math.max(0, 2000 - temp))
     end
-}
-table.insert(drawables, bar)
+})
+
+--addDrawable(MultiValueFilledBar:new{
+    --p1 = Point:new{x = 3, y = 8},
+    --p2 = Point:new{x = 13, y = 38}, 
+    --capacity = reactor.getFuelAmountMax(),
+    --labels = {"fuel", "waste", "empty"},
+    --quantities = {0, 0, 0},
+    --colors = {colors.yellow, colors.cyan, colors.gray},
+    --getQuantities = function()
+        --local fuel = reactor.getFuelAmount()
+        --local waste = reactor.getWasteAmount()
+        --return fuel, waste, reactor.getFuelAmountMax() - fuel - waste
+    --end,
+    --onClick = quit
+--})
 
 run()
