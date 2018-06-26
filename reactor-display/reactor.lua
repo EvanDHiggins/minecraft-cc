@@ -78,11 +78,11 @@ function Rectangle:translateY( dy )
 end
 
 function Rectangle:height()
-    return math.abs(self.p1.y - self.p2.y)
+    return math.abs(self.p1.y - self.p2.y) + 1
 end
 
 function Rectangle:width()
-    return math.abs(self.p1.x - self.p2.x)
+    return math.abs(self.p1.x - self.p2.x) + 1
 end
 
 -- 0 < porportion < 1
@@ -212,6 +212,26 @@ function MultiValueFilledBar:draw()
     prev:draw{ color = self.colors[#self.colors]}
 end
 
+StaticTextBox = Rectangle:new{
+    text = ""
+}
+
+function StaticTextBox:new( box )
+    box = box or {}
+    if box.p1 ~= nil then
+        box.p2 = Point:new{x = box.p1.x + string.len(box.text) - 1, y = box.p1.y}
+    end
+    setmetatable(box, self)
+    self.__index = self
+    return box
+end
+
+function StaticTextBox:draw()
+    term.setCursorPos(self.p1.x, self.p1.y)
+    term.setBackgroundColor(colors.black)
+    term.write(string.sub(self.text, 1, self:width() + 1))
+end
+
 
 local exiting = false
 
@@ -266,6 +286,7 @@ function addDrawable( d )
     table.insert(drawables, d)
 end
 
+---   Fuel Temperature   ---
 addDrawable(MultiValueFilledBar:new{
     p1 = Point:new{x = 15, y = 8},
     p2 = Point:new{x = 25, y = 38},
@@ -274,27 +295,35 @@ addDrawable(MultiValueFilledBar:new{
     quantities = {0, 0},
     quantities = {0, 0, 0},
     colors = {colors.blue, colors.red, colors.gray},
-    orientation = 3,
+    orientation = 1,
 
     getQuantities = function()
         local temp = reactor.getFuelTemperature()
         return math.floor(math.min(temp, 1350)), math.floor(math.max(temp - 1350, 0)), math.floor(math.max(0, 2000 - temp))
-    end
+    end,
+
+    onClick = quit
 })
 
---addDrawable(MultiValueFilledBar:new{
-    --p1 = Point:new{x = 3, y = 8},
-    --p2 = Point:new{x = 13, y = 38}, 
-    --capacity = reactor.getFuelAmountMax(),
-    --labels = {"fuel", "waste", "empty"},
-    --quantities = {0, 0, 0},
-    --colors = {colors.yellow, colors.cyan, colors.gray},
-    --getQuantities = function()
-        --local fuel = reactor.getFuelAmount()
-        --local waste = reactor.getWasteAmount()
-        --return fuel, waste, reactor.getFuelAmountMax() - fuel - waste
-    --end,
-    --onClick = quit
---})
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = 7, y = 6},
+    text = "Fuel"
+})
+
+---     Fuel Guage      ---
+addDrawable(MultiValueFilledBar:new{
+    p1 = Point:new{x = 3, y = 8},
+    p2 = Point:new{x = 13, y = 38}, 
+    capacity = reactor.getFuelAmountMax(),
+    labels = {"waste", "fuel", "empty"},
+    quantities = {0, 0, 0},
+    colors = {colors.cyan, colors.yellow, colors.gray},
+    getQuantities = function()
+        local fuel = reactor.getFuelAmount()
+        local waste = reactor.getWasteAmount()
+        return waste, fuel, reactor.getFuelAmountMax() - fuel - waste
+    end,
+    onClick = quit
+})
 
 run()
