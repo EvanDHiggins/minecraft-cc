@@ -1,3 +1,4 @@
+FRAME_LENGTH = 0.5 --seconds
 
 local dbgm = peripheral.wrap("top")
 dbgm.setTextScale(0.5)
@@ -241,13 +242,13 @@ function run()
     term.redirect(monitor)
 
     drawScreen()
-    os.startTimer(2)
+    os.startTimer(FRAME_LENGTH)
     while not exiting do
         debug("exiting == "..tostring(exiting))
         local event, p1, p2, p3 = os.pullEventRaw()
         if event == 'timer' then
             drawScreen()
-            os.startTimer(1)
+            os.startTimer(FRAME_LENGTH)
         elseif event == 'monitor_touch' then
             handleClickEvent(p1, p2, p3)
         else
