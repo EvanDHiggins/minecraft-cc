@@ -92,7 +92,7 @@ end
 -- The first rectangle returned will be the requested
 -- proportion from the left, the second will be the remaining portion.
 function Rectangle:splitByProportionX( p )
-    local newX = self:left() + math.floor(p * self:width())
+    local newX = self:left() + math.floor(p * (self:width() - 1))
     return Rectangle:new{
         p1 = Point:new{x = self:left(), y = self:top()},
         p2 = Point:new{x = newX, y = self:bottom()}
@@ -209,27 +209,44 @@ function MultiValueFilledBar:draw()
         prev = r2
         tempCapacity = tempCapacity - self.quantities[i]
         r1:draw{color = self.colors[i]}
+        if tempCapacity == 0 then
+            return
+        end
     end
     prev:draw{ color = self.colors[#self.colors]}
 end
 
 StaticTextBox = Rectangle:new{
-    text = ""
+    text = "",
+    textColor = colors.white,
+    getText = nil,
+    backgroundColor = colors.black
 }
 
 function StaticTextBox:new( box )
     box = box or {}
-    if box.p1 ~= nil then
-        box.p2 = Point:new{x = box.p1.x + string.len(box.text) - 1, y = box.p1.y}
-    end
     setmetatable(box, self)
     self.__index = self
+    box:calcP2()
     return box
 end
 
+function StaticTextBox:calcP2()
+    self.p2 = Point:new{x = self.p1.x + string.len(self.text) - 1, y = self.p1.y}
+end
+
+function StaticTextBox:updateText()
+    if type(self.getText) == "function" then
+        self.text = self.getText()
+        self:calcP2()
+    end
+end
+
 function StaticTextBox:draw()
+    self:updateText()
     term.setCursorPos(self.p1.x, self.p1.y)
-    term.setBackgroundColor(colors.black)
+    term.setBackgroundColor(self.backgroundColor)
+    term.setTextColor(self.textColor)
     term.write(string.sub(self.text, 1, self:width() + 1))
 end
 
@@ -238,7 +255,7 @@ local exiting = false
 
 function run()
     local monitor = peripheral.wrap("right")
-    monitor.setTextScale(0.5)
+    --monitor.setTextScale(0.5)
     term.redirect(monitor)
 
     drawScreen()
@@ -251,6 +268,7 @@ function run()
             os.startTimer(FRAME_LENGTH)
         elseif event == 'monitor_touch' then
             handleClickEvent(p1, p2, p3)
+            drawScreen()
         else
             debug("Unknown event found: "..event)
         end
@@ -277,7 +295,6 @@ function drawScreen()
     end
 end
 
-local reactor = peripheral.wrap("BigReactors-Reactor_1")
 
 function quit()
     exiting = true
@@ -287,19 +304,117 @@ function addDrawable( d )
     table.insert(drawables, d)
 end
 
+function clamp(min, val, max)
+    return math.min(max, math.max(min, val))
+end
+
+--Reactor = {
+    --networkLabel = "BigReactors-Reactor_1"
+--}
+
+--function Reactor:new( r )
+    --r = r or {}
+    --setmetatable(r, self)
+    --self.__index = self
+    --return r
+--end
+
+--function Reactor:conn()
+    --if self.connection ~= nil then
+        --return self.connection
+    --end
+    --self.connection = peripheral.wrap(self.networkLabel)
+    --return self.connection
+--end
+
+--function Reactor:getFuelAmount()
+    --if self:conn() == nil then
+        --return 0
+    --end
+    --return self:conn().getFuelAmount()
+--end
+
+--function Reactor:getFuelAmountMax()
+    --if self:conn() == nil then
+        --return 0
+    --end
+    --return self:conn().getFuelAmountMax()
+--end
+
+--function Reactor:getWasteAmount()
+    --if self:conn() == nil then
+        --return 0
+    --end
+--end
+
+
+local reactor = peripheral.wrap("BigReactors-Reactor_1")
+--reactor = Reactor:new{
+    --networkLabel = "BigReactors-Reactor_1"
+--}
+
+BAR_GRAPH_LEFT_X_MARGIN = 12
+BAR_GRAPH_RIGHT_X_MARGIN = 38
+GRAPH_TEXT_X_MARGIN = 2
+
+REACTOR_MAX_STORED_ENERGY = 10000000
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = GRAPH_TEXT_X_MARGIN, y = 2},
+    text = "Fuel Amt"
+})
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = GRAPH_TEXT_X_MARGIN, y = 3},
+    text = "----- mB",
+    getText = function()
+        return string.format("% 5d mB", reactor.getFuelAmount() or 0)
+    end
+})
+
+---     Fuel Guage      ---
+addDrawable(MultiValueFilledBar:new{
+    p1 = Point:new{x = BAR_GRAPH_LEFT_X_MARGIN, y = 2},
+    p2 = Point:new{x = BAR_GRAPH_RIGHT_X_MARGIN, y = 3}, 
+    capacity = reactor.getFuelAmountMax(),
+    labels = {"waste", "fuel", "empty"},
+    quantities = {0, 0, 0},
+    colors = {colors.cyan, colors.yellow, colors.gray},
+    orientation = 2,
+    getQuantities = function()
+        local fuel = reactor.getFuelAmount() or 0
+        local waste = reactor.getWasteAmount() or 0
+        return waste, fuel, (reactor.getFuelAmountMax() or 0) - fuel - waste
+    end,
+    onClick = quit
+})
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = GRAPH_TEXT_X_MARGIN, y = 5},
+    text = "Fuel Temp"
+})
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = GRAPH_TEXT_X_MARGIN, y = 6},
+    text = "---- C",
+    getText = function()
+        return string.format("% 4d C", reactor.getFuelTemperature() or 0)
+    end
+})
+debug(drawables[#drawables].p2:toString())
+
 ---   Fuel Temperature   ---
 addDrawable(MultiValueFilledBar:new{
-    p1 = Point:new{x = 15, y = 8},
-    p2 = Point:new{x = 25, y = 38},
+    p1 = Point:new{x = BAR_GRAPH_LEFT_X_MARGIN, y = 5},
+    p2 = Point:new{x = BAR_GRAPH_RIGHT_X_MARGIN, y = 6},
     capacity = 2000,
     labels = {"<1350", ">=1350", "none"},
-    quantities = {0, 0},
     quantities = {0, 0, 0},
     colors = {colors.blue, colors.red, colors.gray},
-    orientation = 1,
+    orientation = 2,
 
     getQuantities = function()
-        local temp = reactor.getFuelTemperature()
+        local temp = reactor.getFuelTemperature() or 0
         return math.floor(math.min(temp, 1350)), math.floor(math.max(temp - 1350, 0)), math.floor(math.max(0, 2000 - temp))
     end,
 
@@ -307,24 +422,170 @@ addDrawable(MultiValueFilledBar:new{
 })
 
 addDrawable(StaticTextBox:new{
-    p1 = Point:new{x = 7, y = 6},
-    text = "Fuel"
+    p1 = Point:new{x = GRAPH_TEXT_X_MARGIN, y = 8},
+    text = "Energy"
 })
 
----     Fuel Guage      ---
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = GRAPH_TEXT_X_MARGIN, y = 9},
+    text = "--- %",
+    getText = function()
+        local percentage = ((reactor.getEnergyStored() or 0) / REACTOR_MAX_STORED_ENERGY) * 100
+        return string.format("% 3d", percentage).."% Full"
+    end
+})
+
 addDrawable(MultiValueFilledBar:new{
-    p1 = Point:new{x = 3, y = 8},
-    p2 = Point:new{x = 13, y = 38}, 
-    capacity = reactor.getFuelAmountMax(),
-    labels = {"waste", "fuel", "empty"},
-    quantities = {0, 0, 0},
-    colors = {colors.cyan, colors.yellow, colors.gray},
+    p1 = Point:new{x = BAR_GRAPH_LEFT_X_MARGIN, y = 8},
+    p2 = Point:new{x = BAR_GRAPH_RIGHT_X_MARGIN, y = 9},
+    capacity = 100,
+    labels = {"filled", "empty"},
+    quantities = {0, 0},
+    colors = {colors.red, colors.gray},
+    orientation = 2,
+
     getQuantities = function()
-        local fuel = reactor.getFuelAmount()
-        local waste = reactor.getWasteAmount()
-        return waste, fuel, reactor.getFuelAmountMax() - fuel - waste
-    end,
-    onClick = quit
+        local v = clamp(0, 100 * ((reactor.getEnergyStored() or 0) / REACTOR_MAX_STORED_ENERGY), 100)
+        debug("v = "..v)
+        return v, 100 - v
+    end
+})
+
+CONTROL_ROD_Y_START = 11
+CONTROL_ROD_Y_END = CONTROL_ROD_Y_START + reactor.getNumberOfControlRods() * 2
+
+for i=0, reactor.getNumberOfControlRods() - 1 do
+    yPos = CONTROL_ROD_Y_START + i*2
+    --debug("Control Rod "..i.." level = "..reactor.getControlRodLevel(i))
+    addDrawable(StaticTextBox:new{
+        p1 = Point:new{x = 3, y = yPos},
+        text = "Control Rod "..i
+    })
+
+    offset = 4
+
+    incrementControlRod = function( rodIdx )
+        reactor.setControlRodLevel(rodIdx, math.min(100, reactor.getControlRodLevel(rodIdx) + 10))
+    end
+
+    decrementControlRod = function( rodIdx )
+        reactor.setControlRodLevel(rodIdx, math.max(0, reactor.getControlRodLevel(rodIdx) - 10))
+    end
+
+    addDrawable(StaticTextBox:new{
+        p1 = Point:new{x = 16 + offset, y = yPos},
+        text = "X",
+        onClick = function()
+            reactor.setControlRodLevel(i, 0)
+        end,
+        backgroundColor = colors.red
+    })
+
+    addDrawable(StaticTextBox:new{
+        p1 = Point:new{x = 18 + offset, y = yPos},
+        text = "-",
+        onClick = function()
+            decrementControlRod(i)
+        end,
+        backgroundColor = colors.brown
+
+    })
+
+    addDrawable(MultiValueFilledBar:new{
+        p1 = Point:new{x = 20 + offset, y = yPos},
+        p2 = Point:new{x = 29 + offset, y = yPos},
+        capacity = 100,
+        labels = {"inserted", "empty"},
+        quantities = {0, 0},
+        colors = {colors.white, colors.gray},
+        orientation = 2,
+
+        getQuantities = function()
+            local level = reactor.getControlRodLevel(i) or 0
+            return level, 100 - level
+        end
+    })
+
+    addDrawable(StaticTextBox:new{
+        p1 = Point:new{x = 31 + offset, y = yPos},
+        text = "+",
+        onClick = function()
+            incrementControlRod(i)
+        end,
+        backgroundColor = colors.brown
+    })
+
+    addDrawable(StaticTextBox:new{
+        p1 = Point:new{x = 33 + offset, y = yPos},
+        text = "=",
+        onClick = function()
+            reactor.setControlRodLevel(i, 100)
+        end,
+        backgroundColor = colors.green
+    })
+end
+
+function getButtonColor()
+    if reactor.getActive() then
+        return colors.green
+    end
+    return colors.red
+end
+
+powerLabel = StaticTextBox:new{
+    p1 = Point:new{x = 32, y = CONTROL_ROD_Y_END + 2},
+    text = "Power",
+    textColor = colors.black,
+    backgroundColor = getButtonColor()
+}
+
+powerButton = Rectangle:new{
+    p1 = Point:new{x = 30, y = CONTROL_ROD_Y_END},
+    p2 = Point:new{x = 38, y = CONTROL_ROD_Y_END + 4},
+    color = getButtonColor(),
+    onClick = function()
+        if powerButton.color == colors.green then
+            reactor.setActive(false)
+            powerButton.color = getButtonColor()
+            powerLabel.backgroundColor = getButtonColor()
+        elseif powerButton.color == colors.red then
+            reactor.setActive(true)
+            powerButton.color = colors.green
+            powerLabel.backgroundColor = getButtonColor()
+        end
+    end
+}
+addDrawable(powerButton)
+addDrawable(powerLabel)
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = 2, y = CONTROL_ROD_Y_END},
+    text = "Fuel Consumption: "
+})
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = 2, y = CONTROL_ROD_Y_END + 1},
+    text = "-.------ mB/t",
+    getText = function()
+        return string.format("%f", reactor.getFuelConsumedLastTick() or 0):sub(1, 7).." mB/t"
+    end
+})
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = 2, y = CONTROL_ROD_Y_END + 3},
+    text = "Energy Output:"
+})
+
+addDrawable(StaticTextBox:new{
+    p1 = Point:new{x = 2, y = CONTROL_ROD_Y_END + 4},
+    text = "------ RF/t",
+    getText = function()
+        local energy = tostring(reactor.getEnergyProducedLastTick() or 0)
+        local pIdx = energy:find('%.')
+        if pIdx ~= nil then
+            return energy:sub(1, pIdx + 2)
+        end
+        return energy
+    end
 })
 
 run()
